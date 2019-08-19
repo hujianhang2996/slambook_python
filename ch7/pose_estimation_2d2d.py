@@ -1,5 +1,3 @@
-# -*-coding:utf-8-*-
-
 import cv2 as cv
 import numpy as np
 
@@ -12,7 +10,7 @@ def pose_estimation_2d2d(kp_1, kp_2, m):
     points_1 = np.array([kp_1[match.queryIdx].pt for match in m])
     points_2 = np.array([kp_2[match.trainIdx].pt for match in m])
 
-    fundamental_matrix, _ = cv.findFundamentalMat(points_1, points_2, method=cv.FM_8POINT)
+    fundamental_matrix, _ = cv.findFundamentalMat(points_1, points_2)
     print('fundamental matrix is: \n', fundamental_matrix)
 
     essential_matrix, _ = cv.findEssentialMat(points_1, points_2, K)
@@ -61,13 +59,13 @@ if __name__ == '__main__':
                     [t[2, 0], 0, -t[0, 0]],
                     [-t[1, 0], t[0, 0], 0]])
     print('t^R = \n', np.matmul(t_x, R))
-    print('E ./ t^R = \n', np.matmul(t_x, R) / E, '应该为一常数。')
+    print('E ./ t^R = \n', np.matmul(t_x, R) / E)  # 矩阵的所有元素应该相等
 
     # 验证对极约束
     for m in matches:
-        pt1 = pixel2cam(key_points_1[m.queryIdx].pt, K)
-        y1 = np.concatenate((pt1, np.array([[1]])))
-        pt2 = pixel2cam(key_points_1[m.trainIdx].pt, K)
-        y2 = np.concatenate((pt2, np.array([[1]])))
-        d = y2.transpose() * t_x * R * y1
-        print('epipolar constraint = ', np.linalg.norm(d))
+        pt1 = pixel2cam(key_points_1[m.queryIdx].pt, K)  #本质上是计算 K^-1 * p
+        y1 = np.concatenate((pt1, np.array([[1]])))  #归一化平面坐标
+        pt2 = pixel2cam(key_points_2[m.trainIdx].pt, K)
+        y2 = np.concatenate((pt2, np.array([[1]])))  #归一化平面坐标
+        d = np.matmul(np.matmul(np.matmul(y2.transpose(), t_x), R), y1)
+        print('epipolar constraint = ', d[0, 0])
