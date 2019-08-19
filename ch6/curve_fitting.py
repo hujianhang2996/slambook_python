@@ -15,8 +15,10 @@ def func(_x, p):
     return np.exp(_a * _x ** 2 + _b * _x + _c)
 
 
-def residuals(p, y, x):
-    return y - func(x, p)
+def residuals(p, y, _x):
+    _a, _b, _c = p
+    y_ = np.exp(_a * _x ** 2 + _b * _x + _c)
+    return y_ - y
 
 
 x_data = np.array(list(range(100))) / 100
