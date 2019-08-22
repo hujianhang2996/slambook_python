@@ -12,6 +12,7 @@ depth = cv.imread(path_to_dataset + "/" + depth_file, -1)
 pre_color = cv.imread(path_to_dataset + "/" + rgb_file)
 pre_kps = np.float32([kp.pt for kp in detector.detect(pre_color)])
 index = 0
+
 while True:
     line = associate_file.readline()
     if not line:
