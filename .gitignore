@@ -125,3 +125,4 @@ dmypy.json
 .idea/
 *.pcd
 playground.py
+test.png
