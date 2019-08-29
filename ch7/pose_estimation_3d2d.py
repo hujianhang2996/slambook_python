@@ -1,6 +1,6 @@
 import cv2 as cv
 import numpy as np
-import scipy.optimize as sco
+import g2o
 from ch7.triangulation import find_feature_matches, pixel2cam
 
 K = np.array([[520.9, 0, 325.1],
@@ -8,18 +8,46 @@ K = np.array([[520.9, 0, 325.1],
               [0, 0, 1]])
 
 
-def bundle_adjustment(points_3d, points_2d, K, r_mat, t_vec):
-    def func(T, p_2d, p_3d):
-        r = np.array(T[:9]).reshape((3, 3))
-        t = np.array(T[9:]).reshape((3, 1))
-        p_2d_ = K.dot(r.dot(p_3d.transpose()) + t)
-        p_2d_ = (p_2d_[:-1, :] / p_2d_[-1, :]).transpose()
-        return np.linalg.norm(p_2d_ - p_2d, axis=1)
+def bundle_adjustment(points_3d, points_2d, r_mat, t_vec):
+    optimizer = g2o.SparseOptimizer()
+    solver = g2o.BlockSolverSE3(g2o.LinearSolverCSparseSE3())
+    solver = g2o.OptimizationAlgorithmLevenberg(solver)
+    optimizer.set_algorithm(solver)
 
-    T0 = np.concatenate((r_mat.flatten(), t_vec.flatten()))
+    pose = g2o.VertexSE3Expmap()
+    pose.set_estimate(g2o.SE3Quat(r_mat, t_vec.reshape((3, ))))
+    pose.set_id(0)
+    optimizer.add_vertex(pose)
 
-    result = sco.leastsq(func, T0, args=(points_2d, points_3d))
-    return np.array(result[0][:9]).reshape((3, 3)), np.array(result[0][9:]).reshape((3, 1))
+    index = 1
+    for p_3d in points_3d:
+        point = g2o.VertexSBAPointXYZ()
+        point.set_id(index)
+        point.set_estimate(p_3d)
+        point.set_marginalized(True)
+        optimizer.add_vertex(point)
+        index += 1
+
+    camera = g2o.CameraParameters(K[0, 0], np.array([K[0, 2], K[1, 2]]), 0)
+    camera.set_id(0)
+    optimizer.add_parameter(camera)
+
+    index = 1
+    for p_2d in points_2d:
+        edge = g2o.EdgeProjectXYZ2UV()
+        edge.set_id(index)
+        edge.set_vertex(0, optimizer.vertex(index))
+        edge.set_vertex(1, pose)
+        edge.set_measurement(p_2d)
+        edge.set_parameter_id(0, 0)
+        edge.set_information(np.identity(2))
+        optimizer.add_edge(edge)
+        index += 1
+
+    optimizer.initialize_optimization()
+    optimizer.set_verbose(True)
+    optimizer.optimize(100)
+    print('T = \n', pose.estimate().matrix())
 
 
 if __name__ == '__main__':
@@ -49,5 +77,4 @@ if __name__ == '__main__':
     print('R = \n', R, '\nt = \n', t)
 
     print('calling bundle adjustment')
-    R_1, t_1 = bundle_adjustment(pts_3d, pts_2d, K, R, t)
-    print('R = \n', R_1, '\nt = \n', t_1)
+    bundle_adjustment(pts_3d, pts_2d, R, t)

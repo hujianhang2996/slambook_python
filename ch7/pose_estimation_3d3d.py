@@ -1,6 +1,6 @@
 import cv2 as cv
 import numpy as np
-import scipy.optimize as sco
+import g2o
 from ch7.triangulation import find_feature_matches, pixel2cam
 
 K = np.array([[520.9, 0, 325.1],
@@ -25,17 +25,32 @@ def pose_estimation_3d3d(p_1, p_2):
     return r_mat, t_vec
 
 
-def bundle_adjustment(p_1, p_2, r_mat, t_vec):
-    def func(T, p1, p2):
-        r = np.array(T[:9]).reshape((3, 3))
-        t = np.array(T[9:]).reshape((3, 1))
-        p1_ = (r.dot(p2.transpose()) + t).transpose()
-        return np.linalg.norm(p1_ - p1, axis=1)
+def bundle_adjustment(ps_1, ps_2, r_mat, t_vec):
+    optimizer = g2o.SparseOptimizer()
+    solver = g2o.BlockSolverSim3(g2o.LinearSolverCSparseSim3())
+    solver = g2o.OptimizationAlgorithmLevenberg(solver)
+    optimizer.set_algorithm(solver)
 
-    T0 = np.concatenate((r_mat.flatten(), t_vec.flatten()))
+    pose = g2o.VertexSE3Expmap()
+    pose.set_estimate(g2o.SE3Quat(np.identity(3), np.zeros((3,))))
+    pose.set_id(0)
+    optimizer.add_vertex(pose)
 
-    result = sco.leastsq(func, T0, args=(p_1, p_2))
-    return np.array(result[0][:9]).reshape((3, 3)), np.array(result[0][9:]).reshape((3, 1))
+    index = 1
+    for p1, p2 in zip(ps_1, ps_2):
+        edge = g2o.EdgeStereoSE3ProjectXYZOnlyPose()
+        edge.cam_project(p2)
+        edge.set_id(index)
+        edge.set_vertex(0, pose)
+        edge.set_measurement(p1)
+        edge.set_information(np.identity(3))
+        optimizer.add_edge(edge)
+        index += 1
+
+    optimizer.initialize_optimization()
+    optimizer.set_verbose(True)
+    optimizer.optimize(100)
+    print('T = \n', pose.estimate().matrix())
 
 
 if __name__ == '__main__':
@@ -69,7 +84,10 @@ if __name__ == '__main__':
     print('R = \n', R, '\nt = \n', t)
     print('R_inv = \n', R.transpose(), '\nt_inv = \n', -R.transpose().dot(t))
 
-    R_1, t_1 = bundle_adjustment(p_3d_1, p_3d_2, R, t)
-    print('ICP via BA results: ')
-    print('R = \n', R_1, '\nt = \n', t_1)
-    print('R_inv = \n', R_1.transpose(), '\nt_inv = \n', -R_1.transpose().dot(t_1))
+    print('calling bundle adjustment')
+    bundle_adjustment(p_3d_1, p_3d_2, R, t)
+
+    for p1, p2 in zip(p_3d_1[:5, :], p_3d_2[:5, :]):
+        print('p1 = ', p1)
+        print('p2 = ', p2)
+        print('R * p2 + t = ', R.dot(p2[:, np.newaxis]) + t)
